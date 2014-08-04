@@ -1,2 +1,4 @@
-faye-go
-=======
+# Faye + Go
+
+
+Experimental
