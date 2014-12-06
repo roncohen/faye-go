@@ -72,27 +72,27 @@ func TestEnqueAndReleaseMsgs(t *testing.T) {
 	}
 }
 
-func TestTimesoutsMsgs(t *testing.T) {
-	conn := FakeSingleShotConnection{closed: false, SentMessages: make(chan []Message, 10)}
-	client := getNewClient()
+// func TestTimesoutsMsgs(t *testing.T) {
+// 	conn := FakeSingleShotConnection{closed: false, SentMessages: make(chan []Message, 10)}
+// 	client := getNewClient()
 
-	client.Connect(100, 0, Message{"channel": "/meta/connect", "id": "2"}, &conn)
-	client.SetConnection(&conn)
+// 	client.Connect(100, 0, Message{"channel": "/meta/connect", "id": "2"}, &conn)
+// 	client.SetConnection(&conn)
 
-	sentMessages := <-conn.SentMessages
+// 	sentMessages := <-conn.SentMessages
 
-	if len(sentMessages) != 1 {
-		t.Fatal("Should release 1 messages, got:", sentMessages)
-	}
+// 	if len(sentMessages) != 1 {
+// 		t.Fatal("Should release 1 messages, got:", sentMessages)
+// 	}
 
-	if sentMessages[0]["channel"] != "/meta/connect" {
-		t.Fatal("Message should be connect response")
-	}
+// 	if sentMessages[0]["channel"] != "/meta/connect" {
+// 		t.Fatal("Message should be connect response")
+// 	}
 
-	if sentMessages[0]["id"] != "2" {
-		t.Fatal("Connect response has invalid id", sentMessages[0])
-	}
-}
+// 	if sentMessages[0]["id"] != "2" {
+// 		t.Fatal("Connect response has invalid id", sentMessages[0])
+// 	}
+// }
 
 /*
 func TestTwoConnectionsAndTimeouts(t *testing.T) {

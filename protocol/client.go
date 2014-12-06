@@ -17,10 +17,12 @@ type Session struct {
 	conn     Connection
 	timeout  int
 	response Message
+	client   *Client
 }
 
-func NewSession(conn Connection, timeout int, response Message) Session {
-	session := Session{conn, timeout, response}
+func NewSession(client *Client, conn Connection, timeout int, response Message) Session {
+	session := Session{conn, timeout, response, client}
+	log.Println("NewSession with timout", timeout)
 	go func() {
 		time.Sleep(time.Duration(timeout) * time.Millisecond)
 		session.End()
@@ -29,13 +31,13 @@ func NewSession(conn Connection, timeout int, response Message) Session {
 }
 
 func (s Session) End() {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	// c.mutex.Lock()
+	// defer c.mutex.Unlock()
 
-	if connection.IsConnected() {
-		connection.Send([]Message{connectResponse})
+	if s.conn.IsConnected() {
+		s.conn.Send([]Message{s.response})
 	} else {
-		log.Println("No longer connected ", c.clientId, reflect.TypeOf(connection))
+		log.Println("No longer connected ", s.client.clientId, reflect.TypeOf(s.conn))
 	}
 }
 
@@ -66,7 +68,7 @@ func (c *Client) Connect(timeout int, interval int, responseMsg Message, connect
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	session := NewSession(connection, timeout, responseMsg)
+	NewSession(c, connection, timeout, responseMsg)
 
 	c.responseMsg = responseMsg
 

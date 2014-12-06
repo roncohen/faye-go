@@ -112,7 +112,7 @@ func (m Engine) Publish(request protocol.Message) {
 	go func() {
 		// Prepare msg to send to subscribers
 		msg := protocol.Message{}
-		msg["channel"] = channel
+		msg["channel"] = channel.Name()
 		msg["data"] = data
 		// TODO: Missing ID
 
@@ -121,7 +121,7 @@ func (m Engine) Publish(request protocol.Message) {
 		log.Print("PUBLISH to ", len(recipients), " clients")
 		// Queue messages
 		for _, c := range recipients {
-			m.clients.GetClient(c).Queue(response)
+			m.clients.GetClient(c).Queue(msg)
 		}
 	}()
 	m.clients.GetClient(request.ClientId()).Queue(response)
