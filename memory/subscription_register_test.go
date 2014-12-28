@@ -1,7 +1,7 @@
 package memory
 
 import (
-	. "github.com/roncohen/faye/utils"
+	. "github.com/roncohen/faye-go/utils"
 
 	"testing"
 )

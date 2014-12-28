@@ -10,8 +10,8 @@ Experimental
 package main
 
 import (
-	"github.com/roncohen/faye"
-	"github.com/roncohen/faye/adapters"
+	"github.com/roncohen/faye-go"
+	"github.com/roncohen/faye-go/adapters"
 	"log"
 	"net/http"
 )

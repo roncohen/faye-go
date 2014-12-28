@@ -2,10 +2,10 @@ package faye
 
 import (
 	"fmt"
-	"github.com/roncohen/faye/memory"
-	"github.com/roncohen/faye/protocol"
-	"github.com/roncohen/faye/transport"
-	"github.com/roncohen/faye/utils"
+	"github.com/roncohen/faye-go/transport"
+	"github.com/roncohen/faye-go/utils"
+	"github.com/roncohen/faye-go/memory"
+	"github.com/roncohen/faye-go/protocol"
 	"strconv"
 )
 

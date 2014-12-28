@@ -1,9 +1,8 @@
 package protocol_test
 
 import (
-	"github.com/roncohen/faye/memory"
-
-	. "github.com/roncohen/faye/protocol"
+	"github.com/roncohen/faye-go/memory"
+	. "github.com/roncohen/faye-go/protocol"
 	"log"
 	"os"
 	"testing"

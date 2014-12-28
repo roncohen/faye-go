@@ -2,11 +2,9 @@ package memory
 
 import (
 	creg "github.com/roncohen/cleaningRegister"
-	"github.com/roncohen/faye/protocol"
-	"github.com/roncohen/faye/utils"
-	// "log"
-	// "sync"
 	"time"
+	"github.com/roncohen/faye-go/protocol"
+	"github.com/roncohen/faye-go/utils"
 )
 
 type ClientRegister struct {
