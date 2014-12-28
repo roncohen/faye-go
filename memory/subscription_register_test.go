@@ -35,6 +35,22 @@ func TestRemoveSubscription(t *testing.T) {
 	}
 }
 
+func TestRemoveClient(t *testing.T) {
+	subreg := NewSubscriptionRegister()
+	clientId := "clientId"
+	patterns := "/foo/**"
+	subreg.AddSubscription(clientId, []string{patterns})
+	// subreg.RemoveSubscription(clientId, []string{patterns})
+	subreg.RemoveClient(clientId)
+
+	expected_clients := []string{}
+	actual_clients := subreg.GetClients([]string{patterns})
+
+	if !CompareStringSlices(actual_clients, expected_clients) {
+		t.Error("Expected client differ from actual clients. Expected: ", expected_clients, " actual: ", actual_clients)
+	}
+}
+
 // func TestExpireNonExisting(t *testing.T) {
 // 	ns := NewMemoryNamespace()
 

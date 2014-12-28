@@ -1,49 +1,20 @@
 package memory
 
 import (
+	"github.com/roncohen/faye/utils"
 	"sync"
 )
 
-type ClientSet struct {
-	clients map[string]bool
-}
-
-func NewClientSet() ClientSet {
-	return ClientSet{make(map[string]bool)}
-}
-
-func (c ClientSet) Add(clientId string) {
-	c.clients[clientId] = true
-}
-
-func (c ClientSet) AddMany(clientIds []string) {
-	for _, clientId := range clientIds {
-		c.clients[clientId] = true
-	}
-}
-
-func (c ClientSet) Remove(clientId string) {
-	delete(c.clients, clientId)
-}
-
-func (c ClientSet) GetAll() []string {
-	all := make([]string, len(c.clients))
-	i := 0
-	for k := range c.clients {
-		all[i] = k
-		i = i + 1
-	}
-	return all
-}
-
 type SubscriptionRegister struct {
-	subscriptions map[string]ClientSet
-	mutex         sync.RWMutex
+	clientByPattern  map[string]utils.StringSet
+	patternsByClient map[string]utils.StringSet
+	mutex            sync.RWMutex
 }
 
-func NewSubscriptionRegister() SubscriptionRegister {
-	return SubscriptionRegister{
-		subscriptions: make(map[string]ClientSet),
+func NewSubscriptionRegister() *SubscriptionRegister {
+	return &SubscriptionRegister{
+		clientByPattern:  make(map[string]utils.StringSet),
+		patternsByClient: make(map[string]utils.StringSet),
 	}
 }
 
@@ -51,12 +22,18 @@ func (sr SubscriptionRegister) AddSubscription(clientId string, patterns []strin
 	sr.mutex.Lock()
 	defer sr.mutex.Unlock()
 	for _, pattern := range patterns {
-		_, ok := sr.subscriptions[pattern]
+		_, ok := sr.clientByPattern[pattern]
 		if !ok {
-			sr.subscriptions[pattern] = NewClientSet()
+			sr.clientByPattern[pattern] = utils.NewStringSet()
 		}
-		sr.subscriptions[pattern].Add(clientId)
+		sr.clientByPattern[pattern].Add(clientId)
 	}
+
+	_, ok := sr.patternsByClient[clientId]
+	if !ok {
+		sr.patternsByClient[clientId] = utils.NewStringSet()
+	}
+	sr.patternsByClient[clientId].AddMany(patterns)
 }
 
 func (sr SubscriptionRegister) RemoveSubscription(clientId string, patterns []string) {
@@ -64,17 +41,29 @@ func (sr SubscriptionRegister) RemoveSubscription(clientId string, patterns []st
 	defer sr.mutex.Unlock()
 
 	for _, pattern := range patterns {
-		sr.subscriptions[pattern].Remove(clientId)
+		sr.clientByPattern[pattern].Remove(clientId)
+		sr.patternsByClient[clientId].Remove(pattern)
 	}
+
 }
 
 func (sr SubscriptionRegister) GetClients(patterns []string) []string {
-	clientSet := NewClientSet()
+	StringSet := utils.NewStringSet()
 	sr.mutex.RLock()
 	defer sr.mutex.RUnlock()
 
 	for _, pattern := range patterns {
-		clientSet.AddMany(sr.subscriptions[pattern].GetAll())
+		StringSet.AddMany(sr.clientByPattern[pattern].GetAll())
 	}
-	return clientSet.GetAll()
+	return StringSet.GetAll()
+}
+
+func (sr SubscriptionRegister) RemoveClient(clientId string) {
+	sr.mutex.Lock()
+	defer sr.mutex.Unlock()
+
+	for _, pattern := range sr.patternsByClient[clientId].GetAll() {
+		sr.clientByPattern[pattern].Remove(clientId)
+	}
+	delete(sr.patternsByClient, clientId)
 }

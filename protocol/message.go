@@ -14,6 +14,10 @@ func (m Message) ClientId() string {
 	return m["clientId"].(string)
 }
 
+func (m Message) SetClientId(clientId string) {
+	m["clientId"] = clientId
+}
+
 func (m Message) Update(update map[string]interface{}) {
 	for k, v := range update {
 		m[k] = v

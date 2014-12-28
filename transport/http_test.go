@@ -2,8 +2,6 @@ package transport
 
 import (
 	"github.com/roncohen/faye/protocol"
-	// "code.google.com/p/go-stringio"
-	// "net/http/httptest"
 	"testing"
 )
 

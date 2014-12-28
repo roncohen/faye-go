@@ -2,15 +2,18 @@ package transport
 
 import (
 	"github.com/gorilla/websocket"
-	// "code.google.com/p/go.net/websocket"
 	"github.com/roncohen/faye/protocol"
-	"log"
+	"github.com/roncohen/faye/utils"
+	// "net"
+	"io"
+	// "log"
 )
 
 const WebSocketConnectionPriority = 10
 
 type Server interface {
 	HandleRequest(interface{}, protocol.Connection)
+	Logger() utils.Logger
 }
 
 type WebSocketConnection struct {
@@ -20,7 +23,6 @@ type WebSocketConnection struct {
 
 func (wc *WebSocketConnection) Send(msgs []protocol.Message) error {
 	err := wc.ws.WriteJSON(msgs)
-	log.Printf("Writing to websocket: %v", msgs)
 	if err != nil {
 		wc.failedSend = true
 	}
@@ -50,8 +52,13 @@ func WebsocketServer(m Server) func(*websocket.Conn) {
 		for {
 			err := ws.ReadJSON(&data)
 			if err != nil {
-				log.Print(err)
-				return
+				if err == io.EOF {
+					m.Logger().Debugf("EOF while reading from socket")
+					return
+				} else {
+					m.Logger().Debugf("While reading from socket: %s", err)
+					return
+				}
 			}
 
 			if arr := data.([]interface{}); len(arr) == 0 {

@@ -4,21 +4,22 @@ import (
 	"fmt"
 	"github.com/roncohen/faye/memory"
 	"github.com/roncohen/faye/protocol"
-	"log"
+	"github.com/roncohen/faye/transport"
+	"github.com/roncohen/faye/utils"
 	"strconv"
 )
 
 type Engine struct {
-	ns            memory.MemoryNamespace
-	subscriptions memory.SubscriptionRegister
-	clients       memory.ClientRegister
+	ns      memory.MemoryNamespace
+	clients *memory.ClientRegister
+	logger  utils.Logger
 }
 
-func NewEngine() Engine {
+func NewEngine(logger utils.Logger) Engine {
 	return Engine{
-		ns:            memory.NewMemoryNamespace(),
-		clients:       memory.NewClientRegister(),
-		subscriptions: memory.NewSubscriptionRegister(),
+		ns:      memory.NewMemoryNamespace(),
+		clients: memory.NewClientRegister(logger),
+		logger:  logger,
 	}
 }
 
@@ -36,15 +37,28 @@ func (m Engine) GetClient(clientId string) *protocol.Client {
 	return m.clients.GetClient(clientId)
 }
 
-func (m Engine) Handshake(request protocol.Message, conn protocol.Connection) {
-	// supportedConnectionType := request["supportedConnectionTypes"].([]interface{})
+func (m Engine) NewClient(conn protocol.Connection) *protocol.Client {
+	newClientId := m.ns.Generate()
+	msgStore := memory.NewMemoryMsgStore()
+	newClient := protocol.NewClient(newClientId, msgStore, m.logger)
+	m.clients.AddClient(&newClient)
+	return &newClient
+}
+
+func (m Engine) AddSubscription(clientId string, subscriptions []string) {
+	m.logger.Infof("SUBSCRIBE %s subscription: %v", clientId, subscriptions)
+	m.clients.AddSubscription(clientId, subscriptions)
+}
+
+func (m Engine) Handshake(request protocol.Message, conn protocol.Connection) string {
+	newClientId := ""
 	version := request["version"].(string)
 
 	response := m.responseFromRequest(request)
 	response["successful"] = false
 
 	if version == protocol.BAYEUX_VERSION {
-		newClientId := m.ns.Generate()
+		newClientId = m.NewClient(conn).Id()
 
 		response.Update(map[string]interface{}{
 			"clientId":                 newClientId,
@@ -55,14 +69,13 @@ func (m Engine) Handshake(request protocol.Message, conn protocol.Connection) {
 			"successful":               true,
 		})
 
-		msgStore := memory.NewMemoryMsgStore()
-		newClient := protocol.NewClient(newClientId, msgStore)
-		m.clients.AddClient(&newClient)
 	} else {
 		response["error"] = fmt.Sprintf("Only supported version is '%s'", protocol.BAYEUX_VERSION)
 	}
+
 	// Answer directly
 	conn.Send([]protocol.Message{response})
+	return newClientId
 }
 
 func (m Engine) Connect(request protocol.Message, client *protocol.Client, conn protocol.Connection) {
@@ -77,20 +90,35 @@ func (m Engine) Connect(request protocol.Message, client *protocol.Client, conn 
 	client.Connect(timeout, 0, response, conn)
 }
 
-func (m Engine) Subscribe(request protocol.Message, client *protocol.Client) {
+func (m Engine) SubscribeService(chanOut chan<- protocol.Message, subscription []string) {
+	conn := transport.InternalConnection{chanOut}
+	newClient := m.NewClient(conn)
+	newClient.Connect(-1, 0, nil, conn)
+	newClient.SetConnection(conn)
+	m.AddSubscription(newClient.Id(), subscription)
+}
+
+func (m Engine) SubscribeClient(request protocol.Message, client *protocol.Client) {
 	response := m.responseFromRequest(request)
 	response["successful"] = true
 
 	subscription := request["subscription"]
 	response["subscription"] = subscription
 
-	log.Printf("SUBSCRIBE %s subscription: %v", client.Id(), subscription)
-
+	var subs []string
 	switch subscription.(type) {
 	case []string:
-		m.subscriptions.AddSubscription(client.Id(), subscription.([]string))
+		subs = subscription.([]string)
 	case string:
-		m.subscriptions.AddSubscription(client.Id(), []string{subscription.(string)})
+		subs = []string{subscription.(string)}
+	}
+
+	for _, s := range subs {
+		// Do not register clients subscribing to a service channel
+		// They will be answered directly instead of through the normal subscription system
+		if !protocol.NewChannel(s).IsService() {
+			m.AddSubscription(client.Id(), []string{s})
+		}
 	}
 
 	client.Queue(response)
@@ -100,29 +128,47 @@ func (m Engine) Disconnect(request protocol.Message, client *protocol.Client, co
 	response := m.responseFromRequest(request)
 	response["successful"] = true
 	clientId := request.ClientId()
-	log.Printf("Client %s disconnected", clientId)
+	m.logger.Debugf("Client %s disconnected", clientId)
 }
 
 func (m Engine) Publish(request protocol.Message) {
-	response := m.responseFromRequest(request)
-	response["successful"] = true
-	data := request["data"]
-	channel := request.Channel()
+	requestingClient := m.clients.GetClient(request.ClientId())
 
-	go func() {
-		// Prepare msg to send to subscribers
-		msg := protocol.Message{}
-		msg["channel"] = channel.Name()
-		msg["data"] = data
-		// TODO: Missing ID
+	if requestingClient == nil {
+		m.logger.Warnf("PUBLISH from unknown client %s", request)
+	} else {
+		response := m.responseFromRequest(request)
+		response["successful"] = true
+		data := request["data"]
+		channel := request.Channel()
 
-		// Get clients with subscriptions
-		recipients := m.subscriptions.GetClients(channel.Expand())
-		log.Print("PUBLISH to ", len(recipients), " clients")
-		// Queue messages
-		for _, c := range recipients {
-			m.clients.GetClient(c).Queue(msg)
-		}
-	}()
-	m.clients.GetClient(request.ClientId()).Queue(response)
+		m.clients.GetClient(request.ClientId()).Queue(response)
+
+		go func() {
+			// Prepare msg to send to subscribers
+			msg := protocol.Message{}
+			msg["channel"] = channel.Name()
+			msg["data"] = data
+			// TODO: Missing ID
+
+			msg.SetClientId(request.ClientId())
+
+			// Get clients with subscriptions
+			recipients := m.clients.GetClients(channel.Expand())
+			m.logger.Debugf("PUBLISH from %s on %s to %d recipients", request.ClientId(), channel, len(recipients))
+			// Queue messages
+			for _, c := range recipients {
+				m.clients.GetClient(c).Queue(msg)
+			}
+		}()
+
+	}
+
+}
+
+// Publish message directly to client
+// msg should have "channel" which the client is expecting, e.g. "/service/echo"
+func (m Engine) PublishFromService(recipientId string, msg protocol.Message) {
+	// response["successful"] = true
+	m.clients.GetClient(recipientId).Queue(msg)
 }

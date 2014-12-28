@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"log"
+	"github.com/roncohen/faye/utils"
 	"reflect"
 	"sync"
 	"time"
@@ -18,16 +18,19 @@ type Session struct {
 	timeout  int
 	response Message
 	client   *Client
+	started  time.Time
+	logger   utils.Logger
 }
 
-func NewSession(client *Client, conn Connection, timeout int, response Message) Session {
-	session := Session{conn, timeout, response, client}
-	log.Println("NewSession with timout", timeout)
-	go func() {
-		time.Sleep(time.Duration(timeout) * time.Millisecond)
-		session.End()
-	}()
-	return session
+func NewSession(client *Client, conn Connection, timeout int, response Message, logger utils.Logger) *Session {
+	session := Session{conn, timeout, response, client, time.Now(), logger}
+	if timeout > 0 {
+		go func() {
+			time.Sleep(time.Duration(timeout) * time.Millisecond)
+			session.End()
+		}()
+	}
+	return &session
 }
 
 func (s Session) End() {
@@ -37,24 +40,29 @@ func (s Session) End() {
 	if s.conn.IsConnected() {
 		s.conn.Send([]Message{s.response})
 	} else {
-		log.Println("No longer connected ", s.client.clientId, reflect.TypeOf(s.conn))
+		s.logger.Debugf("No longer connected %s", s.client.clientId)
 	}
 }
 
 type Client struct {
-	clientId     string
-	connection   Connection
-	msgStore     MsgStore
-	is_connected bool
-	responseMsg  Message
-	mutex        sync.Mutex
+	clientId    string
+	connection  Connection
+	msgStore    MsgStore
+	isConnected bool
+	responseMsg Message
+	mutex       sync.Mutex
+	lastSession *Session
+	created     time.Time
+	logger      utils.Logger
 }
 
-func NewClient(clientId string, msgStore MsgStore) Client {
+func NewClient(clientId string, msgStore MsgStore, logger utils.Logger) Client {
 	client := Client{
-		clientId:     clientId,
-		msgStore:     msgStore,
-		is_connected: false,
+		clientId:    clientId,
+		msgStore:    msgStore,
+		isConnected: false,
+		created:     time.Now(),
+		logger:      logger,
 	}
 
 	return client
@@ -68,21 +76,19 @@ func (c *Client) Connect(timeout int, interval int, responseMsg Message, connect
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	NewSession(c, connection, timeout, responseMsg)
-
+	c.lastSession = NewSession(c, connection, timeout, responseMsg, c.logger)
 	c.responseMsg = responseMsg
 
 	c.flushMsgs()
 }
 
 func (c *Client) SetConnection(connection Connection) {
-	log.Println("Setting connection for", c.clientId, reflect.TypeOf(connection))
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if c.connection == nil || connection.Priority() > c.connection.Priority() {
 		c.connection = connection
-		c.is_connected = true
+		c.isConnected = true
 	}
 }
 
@@ -102,8 +108,21 @@ func (c Client) QueueMany(msgs []Message) {
 	c.flushMsgs()
 }
 
+func (c Client) IsExpired() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if time.Now().Sub(c.created) > time.Duration(1*time.Minute) {
+		if c.lastSession != nil &&
+			time.Now().Sub(c.lastSession.started) > time.Duration(2*time.Hour) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c Client) flushMsgs() {
-	if c.is_connected && c.connection != nil && c.connection.IsConnected() {
+	if c.isConnected && c.connection != nil && c.connection.IsConnected() {
 		msgs := c.msgStore.GetAndClearMessages()
 		if len(msgs) > 0 {
 
@@ -114,19 +133,20 @@ func (c Client) flushMsgs() {
 			} else {
 				msgsWithConnect = msgs
 			}
-			log.Print("Sending ", len(msgsWithConnect), " msgs to ", c.clientId, " on ", reflect.TypeOf(c.connection))
+			c.logger.Debugf("Sending %d msgs to %s on %s", len(msgsWithConnect), c.clientId, reflect.TypeOf(c.connection))
+
 			err := c.connection.Send(msgsWithConnect)
 
 			// failed, so requeue
 			if err != nil {
-				log.Print("Was unable to send to ", c.clientId, ", requeued ", len(msgs), " messages")
+				c.logger.Debugf("Was unable to send to %s requeued %d messages", c.clientId, len(msgs))
 				c.msgStore.EnqueueMessages(msgs)
 			} else {
 				c.responseMsg = nil
-				c.is_connected = false
+				c.isConnected = false
 			}
 		}
 	} else {
-		log.Print("Not connected for ", c.clientId)
+		c.logger.Debugf("Not connected for %s", c.clientId)
 	}
 }

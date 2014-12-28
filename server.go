@@ -3,23 +3,32 @@ package faye
 import (
 	"encoding/json"
 	"github.com/roncohen/faye/protocol"
+	"github.com/roncohen/faye/utils"
 	"io"
-	"log"
 )
 
 type Server struct {
 	engine Engine
+	logger utils.Logger
 }
 
-func NewServer(engine Engine) Server {
-	return Server{engine}
+func NewServer(logger utils.Logger, engine Engine) Server {
+	return Server{engine, logger}
+}
+
+func (s Server) Logger() utils.Logger {
+	return s.logger
+}
+
+func (s Server) Engine() Engine {
+	return s.engine
 }
 
 func (s Server) GetClient(request protocol.Message, conn protocol.Connection) *protocol.Client {
 	clientId := request.ClientId()
 	client := s.engine.GetClient(clientId)
 	if client == nil {
-		log.Printf("Message %v from unknown client %v", request.Channel(), clientId)
+		s.Logger().Warnf("Message %v from unknown client %v", request.Channel(), clientId)
 		response := request
 		response["successful"] = false
 		response["advice"] = map[string]interface{}{"reconnect": "handshake", "interval": "1000"}
@@ -45,16 +54,18 @@ func (s Server) HandleMessage(msg protocol.Message, conn protocol.Connection) {
 	channel := msg.Channel()
 	if channel.IsMeta() {
 		s.HandleMeta(msg, conn)
-	} else if channel.IsService() {
-		s.HandleService(msg)
+		// } else if channel.IsService() {
+		// 	s.HandleService(msg)
 	} else {
 		s.HandlePublish(msg)
 	}
 }
 
-func (s Server) HandleService(msg protocol.Message) protocol.Message {
-	return nil
-}
+// Client publishing to a service channel
+// func (s Server) HandleService(msg protocol.Message) protocol.Message {
+
+// 	return nil
+// }
 
 func (s Server) HandleMeta(msg protocol.Message, conn protocol.Connection) protocol.Message {
 	meta_channel := msg.Channel().MetaType()
@@ -76,10 +87,10 @@ func (s Server) HandleMeta(msg protocol.Message, conn protocol.Connection) proto
 				s.engine.Disconnect(msg, client, conn)
 
 			case protocol.META_SUBSCRIBE_CHANNEL:
-				s.engine.Subscribe(msg, client)
+				s.engine.SubscribeClient(msg, client)
 
 			case protocol.META_UNKNOWN_CHANNEL:
-				log.Panicf("Message with unknown meta channel received")
+				s.Logger().Panicf("Message with unknown meta channel received")
 
 			}
 		}
@@ -90,13 +101,13 @@ func (s Server) HandleMeta(msg protocol.Message, conn protocol.Connection) proto
 
 func (s Server) HandlePublish(msg protocol.Message) {
 	// Publish
-	clientId := msg.ClientId()
-	// if _client, is_connected := s.engine.GetClient(clientId); !is_connected {
+	// clientId := msg.ClientId()
+	// if _client, isConnected := s.engine.GetClient(clientId); !isConnected {
 	// 	// TODO: Howto answer if not connected.
 	// 	return nil
 	// }
 
-	log.Printf("Client %s publishing to %s", clientId, msg.Channel())
+	// log.Printf("Client %s publishing to %s", clientId, msg.Channel())
 	s.engine.Publish(msg)
 }
 

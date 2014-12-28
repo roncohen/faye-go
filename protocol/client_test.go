@@ -2,16 +2,38 @@ package protocol_test
 
 import (
 	"github.com/roncohen/faye/memory"
+
 	. "github.com/roncohen/faye/protocol"
 	"log"
+	"os"
 	"testing"
 )
 
 var test_ns = memory.NewMemoryNamespace()
 
+type Logger struct {
+	*log.Logger
+}
+
+func (l Logger) Debugf(format string, args ...interface{}) {
+	l.Printf(format, args...)
+}
+
+func (l Logger) Errorf(format string, args ...interface{}) {
+	l.Printf(format, args...)
+}
+
+func (l Logger) Infof(format string, args ...interface{}) {
+	l.Printf(format, args...)
+}
+
+func (l Logger) Warnf(format string, args ...interface{}) {
+	l.Printf(format, args...)
+}
+
 func getNewClient() Client {
 	msgStore := memory.NewMemoryMsgStore()
-	return NewClient(test_ns.Generate(), msgStore)
+	return NewClient(test_ns.Generate(), msgStore, Logger{log.New(os.Stdout, "", 0)})
 }
 
 func getMsgWithId(responses []Message, msgId string) Message {

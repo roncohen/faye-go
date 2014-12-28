@@ -3,7 +3,8 @@ package transport
 import (
 	"encoding/json"
 	"github.com/roncohen/faye/protocol"
-	"log"
+
+	// "log"
 	"net/http"
 )
 
@@ -50,14 +51,14 @@ func MakeLongPoll(msgs interface{}, server Server, w http.ResponseWriter) {
 	responseMsgs := <-conn.responseChan
 	bs, err := json.Marshal(responseMsgs)
 	if err != nil {
-		log.Print("While encoding response msgs:", err, responseMsgs)
+		server.Logger().Warnf("While encoding response msgs: %s", err)
 	}
 
 	w.Header().Add("Content-Type", "application/json")
 
 	_, err = w.Write(bs)
 	if err != nil {
-		log.Print("While writing HTTP response:", err)
+		server.Logger().Warnf("While writing HTTP response: %s", err)
 	}
 
 }
